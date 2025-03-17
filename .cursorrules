@@ -1,0 +1,72 @@
+# Sampark-AI Project Rules
+
+## Project Structure
+```
+sampark-ai/
+├── docs/                       # Documentation folder
+│   ├── high_level_overview.md  # High-level project description
+│   ├── technical_design.md     # Technical architecture and best practices
+│   └── milestones.md           # Project milestones
+├── backend/                    # Source code
+│   ├── sampark/                # Main package
+│   │   ├── email_service/      # Email monitoring and communication
+│   │   │   ├── client.py
+│   │   │   ├── client_test.py  # Unit test next to source file
+│   │   │   └── ...
+│   │   ├── task_processor/     # Task understanding and extraction
+│   │   ├── planning/           # LLM-based planning system
+│   │   ├── execution/          # Step execution engine
+│   │   ├── database/           # NoSQL database interactions
+│   │   ├── api/                # FastAPI web endpoints
+│   │   └── utils/              # Shared utilities
+│   ├── tests/
+│   │   └── e2e/                # End-to-end tests
+├── pyproject.toml              # Poetry configuration
+└── README.md                   # Project overview
+```
+
+## Technology Stack
+- Python 3.12+
+- Poetry for dependency management
+- Pydantic AI for LLM interactions
+- MongoDB (NoSQL database)
+- FastAPI for web framework
+- High-level email package for IMAP/SMTP
+
+## Development Rules
+
+### Documentation Requirements
+- All three documentation files (high_level_overview.md, technical_design.md, milestones.md) must be kept up-to-date as the project evolves
+- When completing a milestone, update the milestones.md file to reflect actual implementation details
+- If technical architecture changes during development, update technical_design.md immediately
+- Document any deviations from the original high-level plan in high_level_overview.md
+
+### Testing Standards
+- Maintain 80%+ code coverage for all modules
+- Write tests before implementing features (TDD approach)
+- Unit tests should be placed next to source files with naming convention `file_test.py`
+- Integration tests should test interaction between components
+- End-to-end tests should verify complete user flows
+- All tests must pass before merging changes
+
+### Code Quality
+- Use type hints throughout the codebase
+- Follow PEP 8 style guidelines
+- Document all public functions and classes
+- Use meaningful variable and function names
+- Keep functions small and focused on a single responsibility
+
+### Security Practices
+- No hardcoded credentials in the codebase
+- Use environment variables for configuration
+- Sanitize all user inputs
+- Implement rate limiting for external APIs
+- Add proper authentication for web endpoints
+- Log security-relevant events
+
+### Continuous Development
+- Document new features as they are implemented
+- Update technical diagrams when architecture changes
+- Review documentation at the end of each milestone
+- Maintain an updated changelog
+- Hold regular reviews to ensure documentation accuracy
