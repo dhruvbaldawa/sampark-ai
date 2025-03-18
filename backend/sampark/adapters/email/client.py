@@ -99,6 +99,7 @@ class EmailClient:
             email_data["body_text"] = ""
             email_data["body_html"] = ""
 
+            # Find the body parts - simplified approach
             if msg.is_multipart():
                 for part in msg.walk():
                     content_type = part.get_content_type()
@@ -112,8 +113,8 @@ class EmailClient:
                     if payload is None:
                         continue
 
-                    charset = part.get_content_charset("utf-8")
                     try:
+                        charset = part.get_content_charset("utf-8")
                         decoded_payload = payload.decode(charset)
                     except UnicodeDecodeError:
                         # Fallback to latin-1 if UTF-8 fails
@@ -126,8 +127,8 @@ class EmailClient:
             else:
                 payload = msg.get_payload(decode=True)
                 if payload:
-                    charset = msg.get_content_charset("utf-8")
                     try:
+                        charset = msg.get_content_charset("utf-8")
                         decoded_payload = payload.decode(charset)
                     except UnicodeDecodeError:
                         # Fallback to latin-1 if UTF-8 fails

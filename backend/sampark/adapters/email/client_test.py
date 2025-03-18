@@ -220,3 +220,97 @@ async def test_check_emails(email_monitor):
     callback.assert_called_with(
         {"message_id": "msg-123@example.com", "subject": "Test Email"}
     )
+
+
+def test_parse_email_plain_text(email_client):
+    """Test parsing a plain text email."""
+    # Given
+    raw_email = (
+        b'From: sender@example.com\r\n'
+        b'To: recipient1@example.com, recipient2@example.com\r\n'
+        b'Cc: cc1@example.com, cc2@example.com\r\n'
+        b'Subject: Test Subject\r\n'
+        b'Message-ID: <msg-123@example.com>\r\n'
+        b'Content-Type: text/plain\r\n\r\n'
+        b'This is a test email.'
+    )
+
+    # When
+    result = email_client._parse_email(raw_email)
+
+    # Then
+    assert result["message_id"] == "msg-123@example.com"
+    assert result["subject"] == "Test Subject"
+    assert result["sender"] == "sender@example.com"
+    assert "recipient1@example.com" in result["recipients"]
+    assert "recipient2@example.com" in result["recipients"]
+    assert "cc1@example.com" in result["cc"]
+    assert "cc2@example.com" in result["cc"]
+    assert result["body_text"] == "This is a test email."
+    assert result["body_html"] == ""
+
+
+def test_parse_email_multipart(email_client):
+    """Test parsing a multipart email with text and HTML parts."""
+    # Given
+    raw_email = (
+        b'From: sender@example.com\r\n'
+        b'To: recipient@example.com\r\n'
+        b'Subject: Test Multipart\r\n'
+        b'Message-ID: <msg-456@example.com>\r\n'
+        b'Content-Type: multipart/alternative; boundary="boundary"\r\n\r\n'
+        b'--boundary\r\n'
+        b'Content-Type: text/plain\r\n\r\n'
+        b'This is plain text\r\n'
+        b'--boundary\r\n'
+        b'Content-Type: text/html\r\n\r\n'
+        b'<p>This is HTML</p>\r\n'
+        b'--boundary--\r\n'
+    )
+
+    # When
+    result = email_client._parse_email(raw_email)
+
+    # Then
+    assert result["message_id"] == "msg-456@example.com"
+    assert result["subject"] == "Test Multipart"
+    assert result["body_text"] == "This is plain text"
+    assert result["body_html"] == "<p>This is HTML</p>"
+
+
+@pytest.mark.asyncio
+async def test_send_email_with_optional_parameters(email_client, mock_smtp):
+    """Test sending an email with all optional parameters."""
+    # Given
+    mock_smtp.reset_mock()
+
+    # When
+    success, message_id = await email_client.send_email(
+        recipients=["recipient1@example.com", "recipient2@example.com"],
+        subject="Test Subject",
+        body_text="This is a test email.",
+        body_html="<p>This is a test email.</p>",
+        cc=["cc1@example.com", "cc2@example.com"],
+        in_reply_to="original-msg-id",
+        references="original-thread-id"
+    )
+
+    # Then
+    mock_instance = mock_smtp.return_value
+    assert mock_instance.send_message.called
+    assert success is True
+    assert message_id != ""
+
+    # Check that the message was constructed correctly by examining the call
+    # args of send_message method
+    call_args = mock_instance.send_message.call_args[0]
+    sent_message = call_args[0]
+    assert sent_message["Subject"] == "Test Subject"
+    assert "recipient1@example.com" in sent_message["To"]
+    assert "recipient2@example.com" in sent_message["To"]
+    assert "cc1@example.com" in sent_message["Cc"]
+    assert "cc2@example.com" in sent_message["Cc"]
+    assert sent_message["In-Reply-To"] == "<original-msg-id>"
+    # The References header appends the in-reply-to value to the existing references
+    assert "original-thread-id" in sent_message["References"]
+    assert "<original-msg-id>" in sent_message["References"]

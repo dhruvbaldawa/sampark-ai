@@ -1,6 +1,5 @@
 import logging
-from datetime import datetime
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Dict, List, Optional, Tuple, Any
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -179,19 +178,8 @@ class EmailService:
                 logger.error(f"Could not find thread for message {message_id}")
                 return False, None
 
-            # Determine recipients (original sender + all recipients except us)
-            recipients = [original_message.sender]
-
-            # Add original recipients unless they're us
-            original_recipients = [r.strip() for r in original_message.recipients.split(",") if r.strip()]
-            for recipient in original_recipients:
-                if recipient != self.email_client.username and recipient not in recipients:
-                    recipients.append(recipient)
-
-            # Create subject with "Re: " prefix if not already there
-            subject = original_message.subject
-            if not subject.lower().startswith("re:"):
-                subject = f"Re: {subject}"
+            # Determine recipients and prepare email for sending
+            recipients, subject, email_refs = self._prepare_reply_data(original_message)
 
             # Send the email
             success, reply_message_id = await self.email_client.send_email(
@@ -200,7 +188,7 @@ class EmailService:
                 body_text=body_text,
                 body_html=body_html,
                 in_reply_to=original_message.message_id,
-                references=original_message.references,
+                references=email_refs,
             )
 
             if not success:
@@ -216,7 +204,7 @@ class EmailService:
                 "body_text": body_text,
                 "body_html": body_html or "",
                 "in_reply_to": original_message.message_id,
-                "references": original_message.references,
+                "references": email_refs,
             }
 
             # Save the message
@@ -245,6 +233,35 @@ class EmailService:
             # Only close if we created the session
             if session_context:
                 await session_context.__aexit__(None, None, None)
+
+    def _prepare_reply_data(self, original_message: EmailMessage) -> Tuple[List[str], str, str]:
+        """
+        Prepare data needed for replying to an email.
+
+        Args:
+            original_message: The original message to reply to
+
+        Returns:
+            Tuple of (recipients, subject, references)
+        """
+        # Determine recipients (original sender + all recipients except us)
+        recipients = [original_message.sender]
+
+        # Add original recipients unless they're us
+        original_recipients = [r.strip() for r in original_message.recipients.split(",") if r.strip()]
+        for recipient in original_recipients:
+            if recipient != self.email_client.username and recipient not in recipients:
+                recipients.append(recipient)
+
+        # Create subject with "Re: " prefix if not already there
+        subject = original_message.subject
+        if not subject.lower().startswith("re:"):
+            subject = f"Re: {subject}"
+
+        # Use existing references or create new ones
+        references = original_message.references or original_message.message_id
+
+        return recipients, subject, references
 
     async def get_thread_messages(self, thread_id: str, db_session: Optional[AsyncSession] = None) -> List[EmailMessage]:
         """

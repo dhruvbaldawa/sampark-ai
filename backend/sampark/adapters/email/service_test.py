@@ -2,6 +2,7 @@ import pytest
 from datetime import datetime
 from sqlalchemy import select, func
 from unittest.mock import AsyncMock, MagicMock, patch
+from sqlalchemy.exc import SQLAlchemyError
 
 from sampark.adapters.email.client import EmailClient
 from sampark.adapters.email.service import EmailService
@@ -248,3 +249,156 @@ async def test_get_recent_threads(email_service, db_session):
     assert len(threads) == 2
     assert threads[0].id == thread2.id  # Most recent first (2023-01-02)
     assert threads[1].id == thread1.id  # Oldest last (2023-01-01)
+
+
+@pytest.mark.asyncio
+async def test_error_handling_get_thread_by_thread_id(email_service, db_session):
+    """Test error handling in _get_thread_by_thread_id method."""
+    # Given
+    db_session.execute = AsyncMock(side_effect=SQLAlchemyError("Database error"))
+
+    # When/Then
+    await email_service._get_thread_by_thread_id(db_session, "some-thread-id")
+
+
+@pytest.mark.asyncio
+async def test_error_handling_get_message_by_message_id(email_service, db_session):
+    """Test error handling in _get_message_by_message_id method."""
+    # Given
+    db_session.execute = AsyncMock(side_effect=SQLAlchemyError("Database error"))
+
+    # When/Then
+    await email_service._get_message_by_message_id(db_session, "some-message-id")
+
+
+@pytest.mark.asyncio
+async def test_error_handling_create_email_thread(email_service, db_session):
+    """Test error handling in _create_email_thread method."""
+    # Given
+    db_session.flush = AsyncMock(side_effect=SQLAlchemyError("Database error"))
+
+    # When/Then
+    await email_service._create_email_thread(db_session, "some-thread-id", "Test Subject")
+
+
+@pytest.mark.asyncio
+async def test_error_handling_save_email_message(email_service, db_session):
+    """Test error handling in _save_email_message method."""
+    # Given
+    db_session.flush = AsyncMock(side_effect=SQLAlchemyError("Database error"))
+    message_data = {
+        "message_id": "test-msg-id",
+        "sender": "sender@example.com",
+        "recipients": ["recipient@example.com"],
+        "subject": "Test Subject",
+        "body_text": "Body text",
+        "body_html": "<p>Body HTML</p>",
+    }
+
+    # When/Then
+    await email_service._save_email_message(db_session, message_data, "thread-id")
+
+
+@pytest.mark.asyncio
+async def test_error_handling_process_new_email(email_service, db_session):
+    """Test error handling in process_new_email method."""
+    # Given
+    # Set up _get_thread_by_thread_id to raise an exception
+    email_service._get_thread_by_thread_id = AsyncMock(side_effect=SQLAlchemyError("Database error"))
+
+    # Create test data
+    email_data = {
+        "message_id": "test-msg-id",
+        "thread_id": "test-thread-id",
+        "sender": "sender@example.com",
+        "recipients": ["recipient@example.com"],
+        "subject": "Test Subject",
+        "body_text": "Body text",
+        "body_html": "<p>Body HTML</p>",
+    }
+
+    # When
+    result = await email_service.process_new_email(email_data, db_session)
+
+    # Then
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_error_handling_reply_to_email_message_not_found(email_service, db_session):
+    """Test error handling in reply_to_email when message is not found."""
+    # Given
+    email_service._get_message_by_message_id = AsyncMock(return_value=None)
+
+    # When
+    success, message = await email_service.reply_to_email(
+        message_id="non-existent-id",
+        body_text="Reply text",
+        body_html="<p>Reply HTML</p>",
+        db_session=db_session,
+    )
+
+    # Then
+    assert success is False
+    assert message is None
+
+
+@pytest.mark.asyncio
+async def test_error_handling_reply_to_email_thread_not_found(email_service, db_session):
+    """Test error handling in reply_to_email when thread is not found."""
+    # Given
+    # Create a mock message
+    mock_message = AsyncMock()
+    mock_message.message_id = "test-msg-id"
+    mock_message.thread_id = "test-thread-id"
+
+    # Set up to return the message but no thread
+    email_service._get_message_by_message_id = AsyncMock(return_value=mock_message)
+    email_service._get_thread_by_thread_id = AsyncMock(return_value=None)
+
+    # When
+    success, message = await email_service.reply_to_email(
+        message_id="test-msg-id",
+        body_text="Reply text",
+        body_html="<p>Reply HTML</p>",
+        db_session=db_session,
+    )
+
+    # Then
+    assert success is False
+    assert message is None
+
+
+@pytest.mark.asyncio
+async def test_error_handling_reply_to_email_send_failure(email_service, db_session):
+    """Test error handling in reply_to_email when sending fails."""
+    # Given
+    # Create a mock message and thread
+    mock_message = AsyncMock()
+    mock_message.message_id = "test-msg-id"
+    mock_message.thread_id = "test-thread-id"
+    mock_message.sender = "sender@example.com"
+    mock_message.recipients = "recipient@example.com"
+    mock_message.subject = "Original Subject"
+
+    mock_thread = AsyncMock()
+    mock_thread.id = "thread-uuid"
+
+    # Set up to return the message and thread
+    email_service._get_message_by_message_id = AsyncMock(return_value=mock_message)
+    email_service._get_thread_by_thread_id = AsyncMock(return_value=mock_thread)
+
+    # Configure send_email to fail
+    email_service.email_client.send_email = AsyncMock(return_value=(False, None))
+
+    # When
+    success, message = await email_service.reply_to_email(
+        message_id="test-msg-id",
+        body_text="Reply text",
+        body_html="<p>Reply HTML</p>",
+        db_session=db_session,
+    )
+
+    # Then
+    assert success is False
+    assert message is None
