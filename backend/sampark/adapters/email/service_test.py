@@ -1,15 +1,13 @@
 import pytest
 from datetime import datetime
+from sqlalchemy import select, func
 from unittest.mock import AsyncMock, MagicMock, patch
-
-from sqlalchemy import select
 
 from sampark.adapters.email.client import EmailClient
 from sampark.adapters.email.service import EmailService
 from sampark.db.models import EmailThread, EmailMessage
-
-# Mock import error for greenlet
-patch('sqlalchemy.ext.asyncio.engine.greenlet', create=True).start()
+from tests.factories.email_thread import EmailThreadFactory
+from tests.factories.email_message import EmailMessageFactory
 
 
 @pytest.fixture
@@ -24,21 +22,6 @@ def email_client():
 def email_service(email_client):
     """Create an email service with a mock client."""
     return EmailService(email_client=email_client)
-
-
-@pytest.fixture
-def mock_db_session():
-    """Create a completely isolated mock DB session."""
-    mock_session = AsyncMock()
-
-    # Mock any SQLAlchemy-specific functionality needed
-    mock_session.commit = AsyncMock()
-    mock_session.rollback = AsyncMock()
-    mock_session.flush = AsyncMock()
-    mock_session.add = AsyncMock()
-
-    # Return the simple mock that won't try to connect to a real DB
-    return mock_session
 
 
 @pytest.fixture
@@ -85,193 +68,183 @@ def sample_email_data():
 
 
 @pytest.mark.asyncio
-async def test_process_new_email_existing_thread(email_service, mock_db_session, mock_email_thread, sample_email_data):
+async def test_process_new_email_existing_thread(email_service, db_session, sample_email_data):
     """Test processing a new email with an existing thread."""
     # Given
-    # Configure mock for the thread query
-    thread_result = MagicMock()
-    thread_result.scalar_one_or_none.return_value = mock_email_thread
-    mock_db_session.execute.return_value = thread_result
-
-    # Create an expected result message
-    expected_message = EmailMessage(
-        id="generated-id",
-        message_id=sample_email_data["message_id"],
-        thread_id=mock_email_thread.id,
-        sender=sample_email_data["sender"],
-        body_text=sample_email_data["body_text"],
-    )
-
-    # Create a patched version of _save_email_message that still calls add()
-    async def patched_save_message(session, data, thread_id, is_sent=False):
-        await session.add(expected_message)  # This ensures the add method is called
-        return expected_message
-
-    # Patch to bypass the database for _save_email_message but still call add()
-    patch.object(
-        email_service,
-        '_save_email_message',
-        side_effect=patched_save_message
-    ).start()
-
-    # When
-    result = await email_service.process_new_email(sample_email_data, mock_db_session)
-
-    # Then
-    assert result == expected_message
-    assert mock_db_session.add.called
-    mock_db_session.execute.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_process_new_email_new_thread(email_service, mock_db_session, sample_email_data):
-    """Test processing a new email with a new thread."""
-    # Given
-    # First query returns None (no existing thread)
-    thread_result = MagicMock()
-    thread_result.scalar_one_or_none.return_value = None
-    mock_db_session.execute.return_value = thread_result
-
-    # Create a new thread that should be created
-    new_thread = EmailThread(
-        id="new-thread-id",
+    # Create a thread in the database
+    thread = EmailThreadFactory.create(
         thread_id=sample_email_data["thread_id"],
-        subject=sample_email_data["subject"],
+        subject=sample_email_data["subject"]
     )
-
-    # Create an expected result message
-    expected_message = EmailMessage(
-        id="generated-id",
-        message_id=sample_email_data["message_id"],
-        thread_id=new_thread.id,
-        sender=sample_email_data["sender"],
-        body_text=sample_email_data["body_text"],
-    )
-
-    # Create patched versions of methods that still call add()
-    async def patched_create_thread(session, thread_id, subject):
-        await session.add(new_thread)  # This ensures the add method is called
-        await session.flush()  # Make sure flush is called
-        return new_thread
-
-    async def patched_save_message(session, data, thread_id, is_sent=False):
-        await session.add(expected_message)  # This ensures the add method is called
-        return expected_message
-
-    # Patch the methods but ensure they still call add()
-    patch.object(
-        email_service,
-        '_create_email_thread',
-        side_effect=patched_create_thread
-    ).start()
-
-    patch.object(
-        email_service,
-        '_save_email_message',
-        side_effect=patched_save_message
-    ).start()
+    db_session.add(thread)
+    await db_session.flush()
 
     # When
-    result = await email_service.process_new_email(sample_email_data, mock_db_session)
+    result = await email_service.process_new_email(sample_email_data, db_session)
 
     # Then
-    assert result == expected_message
-    assert mock_db_session.add.called
-    assert mock_db_session.flush.called
-    mock_db_session.execute.assert_called_once()
+    assert result is not None
+    assert result.message_id == sample_email_data["message_id"]
+    assert result.thread_id == thread.id
+    assert result.sender == sample_email_data["sender"]
+    assert result.body_text == sample_email_data["body_text"]
+    assert result.is_sent_by_system is False
+
+    # Verify the message was added to the database
+    query = select(func.count()).select_from(EmailMessage).where(
+        EmailMessage.message_id == sample_email_data["message_id"]
+    )
+    result = await db_session.execute(query)
+    count = result.scalar_one()
+    assert count == 1
 
 
 @pytest.mark.asyncio
-async def test_reply_to_email(email_service, mock_db_session, mock_email_thread, mock_email_message):
+async def test_process_new_email_new_thread(email_service, db_session, sample_email_data):
+    """Test processing a new email with a new thread."""
+    # Given: No existing thread in the database
+
+    # When
+    result = await email_service.process_new_email(sample_email_data, db_session)
+
+    # Then
+    assert result is not None
+    assert result.message_id == sample_email_data["message_id"]
+    assert result.sender == sample_email_data["sender"]
+    assert result.body_text == sample_email_data["body_text"]
+    assert result.is_sent_by_system is False
+
+    # Verify both a thread and a message were added to the database
+    thread_query = select(func.count()).select_from(EmailThread).where(
+        EmailThread.thread_id == sample_email_data["thread_id"]
+    )
+    thread_result = await db_session.execute(thread_query)
+    thread_count = thread_result.scalar_one()
+    assert thread_count == 1
+
+    message_query = select(func.count()).select_from(EmailMessage).where(
+        EmailMessage.message_id == sample_email_data["message_id"]
+    )
+    message_result = await db_session.execute(message_query)
+    message_count = message_result.scalar_one()
+    assert message_count == 1
+
+
+@pytest.mark.asyncio
+async def test_reply_to_email(email_service, db_session):
     """Test replying to an email."""
     # Given
-    # Set up query results for the execute calls
-    message_result = MagicMock()
-    message_result.scalar_one_or_none.return_value = mock_email_message
+    # Create a thread in the database
+    thread = EmailThreadFactory.create(
+        thread_id="test-thread-id",
+        subject="Original Subject"
+    )
+    db_session.add(thread)
+    await db_session.flush()
 
-    thread_result = MagicMock()
-    thread_result.scalar_one_or_none.return_value = mock_email_thread
+    # Create a message in the database - note that we're using thread.thread_id, not thread.id
+    message = EmailMessageFactory.create(
+        thread_id=thread.thread_id,  # This should be thread.thread_id, not thread.id
+        message_id="original-msg-id",
+        sender="sender@example.com",
+        recipients="recipient@example.com, test@example.com",
+        subject="Original Subject",
+        body_text="Original message"
+    )
+    db_session.add(message)
+    await db_session.flush()
 
-    # Configure execute to return different results for first and second call
-    mock_db_session.execute.side_effect = [message_result, thread_result]
+    # Create another query to retrieve the message to verify it's stored correctly
+    query = select(EmailMessage).where(EmailMessage.message_id == "original-msg-id")
+    result = await db_session.execute(query)
+    stored_message = result.scalar_one_or_none()
+    assert stored_message is not None, "Message was not stored correctly"
 
     # Configure email_client.send_email to return success
     email_service.email_client.send_email = AsyncMock()
     email_service.email_client.send_email.return_value = (True, "reply-msg-id")
 
-    # Create expected reply message
-    expected_reply = EmailMessage(
-        id="reply-id",
-        message_id="reply-msg-id",
-        thread_id=mock_email_thread.id,
-        sender=email_service.email_client.username,
-        recipients="sender@example.com, recipient@example.com",
-        subject="Re: Original Subject",
-        body_text="Reply message",
-        body_html="<p>Reply message</p>",
-        in_reply_to="original-msg-id",
-        is_sent_by_system=True,
-    )
-
-    # Patch _save_email_message to return our expected reply
-    patch.object(
-        email_service,
-        '_save_email_message',
-        return_value=expected_reply
-    ).start()
-
     # When
-    success, result = await email_service.reply_to_email(
+    success, reply_message = await email_service.reply_to_email(
         message_id="original-msg-id",
         body_text="Reply message",
         body_html="<p>Reply message</p>",
-        db_session=mock_db_session,
+        db_session=db_session,
     )
 
     # Then
-    assert success is True
-    assert result == expected_reply
-    assert email_service.email_client.send_email.call_count == 1
-    assert mock_db_session.execute.call_count == 2  # Called for message and thread
+    assert success is True, f"Failed to reply to email, check logs for details"
+    assert reply_message is not None
+    assert reply_message.message_id == "reply-msg-id"
+    assert reply_message.in_reply_to == "original-msg-id"
+    assert reply_message.is_sent_by_system is True
+
+    # Verify the email client's send_email method was called correctly
+    email_service.email_client.send_email.assert_called_once()
+    call_args = email_service.email_client.send_email.call_args[1]
+    assert "sender@example.com" in call_args["recipients"]
+    assert call_args["subject"] == "Re: Original Subject"
+    assert call_args["body_text"] == "Reply message"
+
+    # Verify a new message was added to the database
+    query = select(func.count()).select_from(EmailMessage).where(
+        EmailMessage.message_id == "reply-msg-id"
+    )
+    result = await db_session.execute(query)
+    count = result.scalar_one()
+    assert count == 1
 
 
 @pytest.mark.asyncio
-async def test_get_thread_messages(email_service, mock_db_session):
+async def test_get_thread_messages(email_service, db_session):
     """Test getting all messages in a thread."""
     # Given
-    message1 = EmailMessage(id="msg1-uuid", received_at=datetime(2023, 1, 1))
-    message2 = EmailMessage(id="msg2-uuid", received_at=datetime(2023, 1, 2))
+    # Create a thread in the database
+    thread = EmailThreadFactory.create(thread_id="test-thread-id")
+    db_session.add(thread)
+    await db_session.flush()
 
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = [message1, message2]
-    mock_db_session.execute.return_value = mock_result
+    # Create messages in the database
+    message1 = EmailMessageFactory.create(
+        thread_id=thread.id,
+        received_at=datetime(2023, 1, 1)
+    )
+    message2 = EmailMessageFactory.create(
+        thread_id=thread.id,
+        received_at=datetime(2023, 1, 2)
+    )
+    db_session.add(message1)
+    db_session.add(message2)
+    await db_session.flush()
 
     # When
-    messages = await email_service.get_thread_messages("test-thread-id", mock_db_session)
+    messages = await email_service.get_thread_messages("test-thread-id", db_session)
 
     # Then
     assert len(messages) == 2
-    assert messages[0].id == "msg1-uuid"
-    assert messages[1].id == "msg2-uuid"
-    mock_db_session.execute.assert_called_once()
+    assert messages[0].id == message1.id  # First one should be older (2023-01-01)
+    assert messages[1].id == message2.id  # Second one should be newer (2023-01-02)
 
 
 @pytest.mark.asyncio
-async def test_get_recent_threads(email_service, mock_db_session):
+async def test_get_recent_threads(email_service, db_session):
     """Test getting recent threads."""
     # Given
-    thread1 = EmailThread(id="thread1-uuid", updated_at=datetime(2023, 1, 1))
-    thread2 = EmailThread(id="thread2-uuid", updated_at=datetime(2023, 1, 2))
-
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = [thread2, thread1]  # Ordered by updated_at
-    mock_db_session.execute.return_value = mock_result
+    # Create threads in the database with different updated_at times
+    thread1 = EmailThreadFactory.create(
+        updated_at=datetime(2023, 1, 1)
+    )
+    thread2 = EmailThreadFactory.create(
+        updated_at=datetime(2023, 1, 2)
+    )
+    db_session.add(thread1)
+    db_session.add(thread2)
+    await db_session.flush()
 
     # When
-    threads = await email_service.get_recent_threads(limit=2, db_session=mock_db_session)
+    threads = await email_service.get_recent_threads(limit=2, db_session=db_session)
 
     # Then
     assert len(threads) == 2
-    assert threads[0].id == "thread2-uuid"  # Most recent first
-    assert threads[1].id == "thread1-uuid"
-    mock_db_session.execute.assert_called_once()
+    assert threads[0].id == thread2.id  # Most recent first (2023-01-02)
+    assert threads[1].id == thread1.id  # Oldest last (2023-01-01)
