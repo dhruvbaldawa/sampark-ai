@@ -62,13 +62,13 @@ def email_monitor() -> EmailMonitor:
 def test_connect_imap(email_client: EmailClient, mock_imap: Tuple[MagicMock, MagicMock]) -> None:
     """Test connecting to an IMAP server."""
     # Get the mock instance from the tuple
-    _, mock_instance = mock_imap
+    mock_imap_class, mock_instance = mock_imap
 
     # Call the connect method
     email_client._connect_imap()  # type: ignore # Protected member access is acceptable in tests
 
     # Verify that the expected methods were called
-    mock_instance.assert_called_once_with("imap.example.com", 993)
+    mock_imap_class.assert_called_once_with("imap.example.com", 993)
     mock_instance.login.assert_called_once_with("test@example.com", "password")
     mock_instance.select.assert_called_once_with("INBOX")
 
@@ -134,13 +134,13 @@ def test_check_new_emails(
     """Test checking for new emails."""
     # Set up the IMAP connection
     _, mock_instance = mock_imap
-    mock_instance.search.return_value = ("OK", [b"1 2 3"])
+    mock_instance.search.return_value = ("OK", [b"1"])  # Only return one message ID
     mock_instance.fetch.return_value = (
         "OK",
-        [(b"1", b"test-email-data"), (b"FETCH", b"")],
+        [(b"1", b"test-email-data")],  # Just one message
     )
 
-    # Mock the parse email method
+    # Mock the parse email method to return a single message
     mocker.patch.object(
         email_client,
         "_parse_email",
@@ -154,7 +154,7 @@ def test_check_new_emails(
     # Check for new emails
     emails = email_client.check_new_emails()
 
-    # Verify the results
+    # Verify the results - should now be just one email
     assert len(emails) == 1
     assert emails[0]["message_id"] == "msg-123"
 

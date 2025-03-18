@@ -16,6 +16,7 @@ class EmailThread(Base):
     id: Mapped[str] = mapped_column(String(26), primary_key=True, default=lambda: str(ULID()))
     thread_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     subject: Mapped[str] = mapped_column(String(255))
+    participants: Mapped[str] = mapped_column(String(2048), default="[]")  # Serialized list of participants' emails
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
 

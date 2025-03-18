@@ -1,5 +1,6 @@
+import json
 import logging
-from typing import Dict, List, Optional, Tuple, Any, Set, cast
+from typing import Dict, List, Optional, Tuple, Any, Union, cast
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -25,6 +26,7 @@ class EmailService:
             email_client: The email client to use for sending and receiving emails
         """
         self.email_client = email_client
+        self.Session = get_db_session
 
     async def _get_thread_by_thread_id(self, db_session: AsyncSession, thread_id: str) -> Optional[EmailThread]:
         """Get a thread by its thread ID."""
@@ -47,14 +49,20 @@ class EmailService:
             return None
 
     async def _create_email_thread(
-        self, db_session: AsyncSession, thread_id: str, subject: str
+        self, db_session: AsyncSession, thread_id: str, subject: str, initial_participants: Optional[List[str]] = None
     ) -> Optional[EmailThread]:
         """Create a new email thread."""
         try:
+            # Initialize with empty list if none provided
+            participants = initial_participants if initial_participants is not None else []
+
+            # Serialize participants to JSON string
+            serialized_participants = json.dumps(participants)
+
             thread = EmailThread(
                 thread_id=thread_id,
                 subject=subject,
-                participants=[],  # Initialize with empty list
+                participants=serialized_participants,
             )
             db_session.add(thread)
             await db_session.flush()
@@ -62,6 +70,24 @@ class EmailService:
         except SQLAlchemyError as e:
             logger.error(f"Error creating email thread: {str(e)}")
             return None
+
+    # Helper method to get and update participants
+    def _get_participants(self, thread: EmailThread) -> List[str]:
+        """Get the list of participants from a thread."""
+        participants_str = getattr(thread, "participants", "[]")
+        try:
+            return json.loads(participants_str)
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    async def _update_participants(
+        self, db_session: AsyncSession, thread: EmailThread, new_participants: List[str]
+    ) -> None:
+        """Update the participants list for a thread."""
+        serialized = json.dumps(list(set(new_participants)))
+        thread.participants = serialized
+        db_session.add(thread)
+        await db_session.commit()
 
     async def _save_email_message(
         self, db_session: AsyncSession, message_data: Dict[str, Any], thread_id: str, is_sent_by_system: bool = False
@@ -117,7 +143,7 @@ class EmailService:
         try:
             # Create a session if one wasn't provided
             if db_session is None:
-                session_context = get_db_session()
+                session_context = self.Session()
                 db_session = await session_context.__aenter__()
 
             # Get or create the thread
@@ -132,31 +158,27 @@ class EmailService:
                     return None
 
             # Add participants to the thread if needed
-            # Ensure thread.participants is a list before proceeding
-            current_participants: List[str] = getattr(thread, "participants", []) or []
-            participants_set: Set[str] = set(current_participants)
+            all_participants = self._get_participants(thread)
+            participants_set = set(all_participants)
 
             # Add sender
-            participants_set.add(str(email_data["sender"]))
+            sender = str(email_data["sender"])
+            if sender:
+                participants_set.add(sender)
 
-            # Add recipients if they are strings
-            recipients_raw = email_data.get("recipients", [])
+            # Add recipients
+            recipients_raw: Union[List[Optional[str]], str, None] = email_data.get("recipients", [])
             if isinstance(recipients_raw, list):
-                # Process each recipient in the list, handling any type
-                recipients_list: List[Any] = cast(List[Any], recipients_raw)
-                for recipient_item in recipients_list:
-                    # Convert to string and check if it's not empty
-                    if recipient_item is not None:
-                        recipient_str = str(recipient_item)
-                        if recipient_str:
-                            participants_set.add(recipient_str)
+                for item in recipients_raw:
+                    recipient_str: str = str(item) if item is not None else ""
+                    if recipient_str:
+                        participants_set.add(recipient_str)
             elif isinstance(recipients_raw, str) and recipients_raw:
                 participants_set.add(recipients_raw)
 
-            # Convert back to list and update the thread
-            setattr(thread, "participants", list(participants_set))
-            db_session.add(thread)
-            await db_session.commit()
+            # Update participants if they've changed
+            if set(all_participants) != participants_set:
+                await self._update_participants(db_session, thread, list(participants_set))
 
             # Save the message
             return await self._save_email_message(
@@ -198,7 +220,7 @@ class EmailService:
         try:
             # Create a session if one wasn't provided
             if db_session is None:
-                session_context = get_db_session()
+                session_context = self.Session()
                 db_session = await session_context.__aenter__()
 
             # Get the original message
@@ -307,7 +329,7 @@ class EmailService:
         try:
             # Allow session injection for testing
             if db_session is None:
-                session_context = get_db_session()
+                session_context = self.Session()
                 db_session = await session_context.__aenter__()
 
             # Join with threads to get messages by thread_id (not thread.id)
@@ -343,7 +365,7 @@ class EmailService:
         try:
             # Allow session injection for testing
             if db_session is None:
-                session_context = get_db_session()
+                session_context = self.Session()
                 db_session = await session_context.__aenter__()
 
             query = select(EmailThread).order_by(EmailThread.updated_at.desc()).limit(limit).offset(0)
