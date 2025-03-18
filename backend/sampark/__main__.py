@@ -2,11 +2,10 @@ import asyncio
 import logging
 import os
 import sys
-from typing import Dict, Any
 
 from dotenv import load_dotenv
 
-from sampark.adapters.email.client import EmailClient, EmailMonitor
+from sampark.adapters.email.client import EmailClient, EmailMonitor, EmailDataDict
 from sampark.adapters.email.service import EmailService
 from sampark.db.database import init_db
 
@@ -19,7 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def process_email_callback(email_service: EmailService, email_data: Dict[str, Any]) -> None:
+async def process_email_callback(email_service: EmailService, email_data: EmailDataDict) -> None:
     """
     Callback function to process new emails.
 
@@ -46,7 +45,7 @@ async def process_email_callback(email_service: EmailService, email_data: Dict[s
             f"<p>Best regards,<br>Sampark-AI</p>"
         )
 
-        success, reply = await email_service.reply_to_email(
+        success, _ = await email_service.reply_to_email(
             message_id=message.message_id,
             body_text=reply_text,
             body_html=reply_html,
@@ -68,8 +67,13 @@ async def main() -> None:
 
         # Check for required environment variables
         required_env_vars = [
-            "IMAP_SERVER", "IMAP_PORT", "SMTP_SERVER", "SMTP_PORT",
-            "EMAIL_USERNAME", "EMAIL_PASSWORD", "DB_PATH"
+            "IMAP_SERVER",
+            "IMAP_PORT",
+            "SMTP_SERVER",
+            "SMTP_PORT",
+            "EMAIL_USERNAME",
+            "EMAIL_PASSWORD",
+            "DB_PATH",
         ]
 
         missing_vars = [var for var in required_env_vars if not os.getenv(var)]
@@ -100,9 +104,10 @@ async def main() -> None:
         email_monitor = EmailMonitor(email_client=email_client, check_interval=check_interval)
 
         # Register callback to process new emails
-        email_monitor.register_callback(
-            lambda email_data: process_email_callback(email_service, email_data)
-        )
+        async def callback_wrapper(email_data: EmailDataDict) -> None:
+            await process_email_callback(email_service, email_data)
+
+        email_monitor.register_callback(callback_wrapper)
 
         # Start monitoring for emails
         logger.info(f"Starting email monitoring (checking every {check_interval} seconds)...")

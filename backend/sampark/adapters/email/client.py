@@ -3,17 +3,23 @@ import email
 import imaplib
 import logging
 import re
-import time
 from email.message import Message
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate, make_msgid, parseaddr
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Callable, TypeVar, Awaitable
 
 import aiosmtplib
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
+
+# Define a type for the email data dictionary
+EmailDataDict = Dict[str, Any]
+# Type variable for the task's return
+T = TypeVar("T")
+# Define a type for async callback functions
+AsyncCallbackT = Callable[[EmailDataDict], Awaitable[None]]
 
 
 class EmailClient:
@@ -67,7 +73,7 @@ class EmailClient:
             finally:
                 self._imap = None
 
-    def _parse_email(self, raw_email: bytes) -> Dict[str, Any]:
+    def _parse_email(self, raw_email: bytes) -> EmailDataDict:
         """
         Parse raw email data into a structured dictionary.
 
@@ -81,7 +87,7 @@ class EmailClient:
             msg = email.message_from_bytes(raw_email)
 
             # Extract basic headers
-            email_data = {
+            email_data: EmailDataDict = {
                 "message_id": msg.get("Message-ID", "").strip("<>"),
                 "in_reply_to": msg.get("In-Reply-To", "").strip("<>"),
                 "references": msg.get("References", ""),
@@ -115,10 +121,16 @@ class EmailClient:
 
                     try:
                         charset = part.get_content_charset("utf-8")
-                        decoded_payload = payload.decode(charset)
+                        if isinstance(payload, bytes):
+                            decoded_payload = payload.decode(charset)
+                        else:
+                            decoded_payload = str(payload)
                     except UnicodeDecodeError:
                         # Fallback to latin-1 if UTF-8 fails
-                        decoded_payload = payload.decode("latin-1")
+                        if isinstance(payload, bytes):
+                            decoded_payload = payload.decode("latin-1")
+                        else:
+                            decoded_payload = str(payload)
 
                     if content_type == "text/plain":
                         email_data["body_text"] = decoded_payload
@@ -126,7 +138,9 @@ class EmailClient:
                         email_data["body_html"] = decoded_payload
             else:
                 payload = msg.get_payload(decode=True)
-                if payload:
+                if payload is None:
+                    pass
+                elif isinstance(payload, bytes):
                     try:
                         charset = msg.get_content_charset("utf-8")
                         decoded_payload = payload.decode(charset)
@@ -134,6 +148,13 @@ class EmailClient:
                         # Fallback to latin-1 if UTF-8 fails
                         decoded_payload = payload.decode("latin-1")
 
+                    if msg.get_content_type() == "text/plain":
+                        email_data["body_text"] = decoded_payload
+                    elif msg.get_content_type() == "text/html":
+                        email_data["body_html"] = decoded_payload
+                else:
+                    # Handle string or other payload types
+                    decoded_payload = str(payload)
                     if msg.get_content_type() == "text/plain":
                         email_data["body_text"] = decoded_payload
                     elif msg.get_content_type() == "text/html":
@@ -158,21 +179,21 @@ class EmailClient:
         references = msg.get("References", "")
         if references:
             # Use the first message ID in references as thread ID
-            message_ids = re.findall(r'<([^<>]+)>', references)
+            message_ids = re.findall(r"<([^<>]+)>", references)
             if message_ids:
                 return message_ids[0]
 
         # If no References, try In-Reply-To
         in_reply_to = msg.get("In-Reply-To", "")
         if in_reply_to:
-            message_id = re.search(r'<([^<>]+)>', in_reply_to)
+            message_id = re.search(r"<([^<>]+)>", in_reply_to)
             if message_id:
                 return message_id.group(1)
 
         # If no References or In-Reply-To, use subject + sender as thread ID
         subject = msg.get("Subject", "")
         # Remove any Re: or Fwd: prefixes from subject for thread ID consistency
-        clean_subject = re.sub(r'(?i)^(re|fwd)(\[\d+\])?:\s*', '', subject)
+        clean_subject = re.sub(r"(?i)^(re|fwd)(\[\d+\])?:\s*", "", subject)
         if not clean_subject:
             clean_subject = "No Subject"
 
@@ -180,7 +201,7 @@ class EmailClient:
         from_addr = parseaddr(msg.get("From", ""))[1]
         return f"{clean_subject}_{from_addr}"
 
-    def check_new_emails(self) -> List[Dict[str, Any]]:
+    def check_new_emails(self) -> List[EmailDataDict]:
         """
         Check for new unseen emails in the mailbox.
 
@@ -189,6 +210,11 @@ class EmailClient:
         """
         try:
             self._connect_imap()
+
+            # After connecting, self._imap should not be None, but check to make the linter happy
+            if self._imap is None:
+                logger.error("IMAP connection is not established")
+                return []
 
             # Search for all unseen emails
             result, message_ids = self._imap.search(None, "UNSEEN")
@@ -200,16 +226,27 @@ class EmailClient:
             if not message_id_list:
                 return []
 
-            emails = []
+            emails: List[EmailDataDict] = []
             for message_id in message_id_list:
+                # The IMAP connection should remain established throughout this loop
                 result, data = self._imap.fetch(message_id, "(RFC822)")
-                if result != "OK":
+                if result != "OK" or not data:
                     logger.error("Failed to fetch email with ID %s", message_id)
                     continue
 
+                # Ensure we have valid data before indexing
+                if not data or not isinstance(data[0], tuple) or len(data[0]) < 2:
+                    logger.error("Invalid data structure returned from IMAP server")
+                    continue
+
                 raw_email = data[0][1]
-                email_data = self._parse_email(raw_email)
-                emails.append(email_data)
+                # Process the raw email data - we know it must be bytes at this point
+                try:
+                    # Skip the unnecessary isinstance check since we know the type
+                    email_data = self._parse_email(raw_email)
+                    emails.append(email_data)
+                except Exception as e:
+                    logger.error(f"Error processing email: {str(e)}")
 
             return emails
         except Exception as e:
@@ -302,31 +339,32 @@ class EmailClient:
     )
     async def _send_smtp(self, msg: MIMEMultipart, recipients: List[str]) -> Tuple[bool, str]:
         """
-        Send an email using SMTP with retry logic.
+        Send an email message via SMTP with retries.
 
         Args:
             msg: Email message to send
-            recipients: List of recipients
+            recipients: List of recipient email addresses
 
         Returns:
             Tuple of (success, message_id)
         """
-        client = aiosmtplib.SMTP(hostname=self.smtp_server, port=self.smtp_port, use_tls=True)
-
         try:
-            await client.connect()
-            await client.login(self.username, self.password)
-            await client.send_message(msg, self.username, recipients)
-            message_id = msg["Message-ID"].strip("<>")
-            return True, message_id
+            smtp = aiosmtplib.SMTP(hostname=self.smtp_server, port=self.smtp_port)
+            await smtp.connect()
+            await smtp.login(self.username, self.password)
+
+            # Send the message
+            await smtp.send_message(msg)
+            await smtp.quit()
+
+            # Return success with the message ID
+            message_id = msg["Message-ID"]
+            if message_id:
+                return True, message_id.strip("<>")
+            return True, ""
         except Exception as e:
-            logger.error("SMTP error: %s", str(e))
-            raise
-        finally:
-            try:
-                await client.quit()
-            except Exception:
-                pass
+            logger.error("Failed to send email: %s", str(e))
+            return False, ""
 
 
 class EmailMonitor:
@@ -342,10 +380,10 @@ class EmailMonitor:
         self.email_client = email_client
         self.check_interval = check_interval
         self._running = False
-        self._task: Optional[asyncio.Task] = None
-        self._new_email_callbacks: List[callable] = []
+        self._task: Optional[asyncio.Task[None]] = None
+        self._new_email_callbacks: List[AsyncCallbackT] = []
 
-    def register_callback(self, callback: callable) -> None:
+    def register_callback(self, callback: AsyncCallbackT) -> None:
         """
         Register a callback function to be called when new emails are received.
 

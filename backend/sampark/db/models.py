@@ -17,9 +17,7 @@ class EmailThread(Base):
     thread_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     subject: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.now, onupdate=datetime.now
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     # Relationship with EmailMessage
     messages: Mapped[List["EmailMessage"]] = relationship(

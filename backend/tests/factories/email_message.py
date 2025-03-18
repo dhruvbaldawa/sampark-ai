@@ -1,6 +1,7 @@
 """
 Factory for creating EmailMessage models for testing.
 """
+
 import random
 import string
 from datetime import datetime
@@ -74,7 +75,7 @@ class EmailMessageFactory:
             body_text = f"This is a test email body {random.randint(1000, 9999)}"
 
         if message_id is None:
-            rand_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+            rand_str = "".join(random.choices(string.ascii_lowercase + string.digits, k=10))
             message_id = f"msg-{rand_str}@example.com"
 
         # Create the message

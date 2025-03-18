@@ -1,6 +1,7 @@
 """
 Factory for creating EmailThread models for testing.
 """
+
 import random
 from datetime import datetime
 from typing import Any, List, Optional

@@ -1,11 +1,13 @@
 """
 Global pytest fixtures for all tests.
 """
+
 import pytest
 import pytest_asyncio
+from sqlalchemy import Engine
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from typing import AsyncGenerator, Dict, Any
+from typing import Dict, Any, cast
 
 from sampark.db.database import Base
 
@@ -13,8 +15,8 @@ from sampark.db.database import Base
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
-@pytest_asyncio.fixture(scope="session")
-async def test_engine():
+@pytest_asyncio.fixture(scope="session")  # type: ignore
+async def test_engine():  # type: ignore
     """Create a test database engine using in-memory SQLite."""
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 
@@ -32,21 +34,23 @@ async def test_engine():
     await engine.dispose()
 
 
-@pytest_asyncio.fixture
-async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
+@pytest_asyncio.fixture  # type: ignore
+async def db_session(test_engine):  # type: ignore
     """Create a test database session for dependency injection in tests."""
-    async_session = sessionmaker(
-        test_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    # Create a sessionmaker that produces AsyncSession objects
+    # Cast the engine to Engine for type checking
+    async_session_factory = sessionmaker(bind=cast(Engine, test_engine), expire_on_commit=False, class_=AsyncSession)
 
     # Create a new session for each test
-    async with async_session() as session:
-        # Start a transaction
-        async with session.begin():
-            # Use the session in the test
-            yield session
-            # Rollback at the end of each test to maintain isolation
-            await session.rollback()
+    session = async_session_factory()
+
+    try:
+        # Use the session in the test
+        yield session
+        # Roll back at the end to isolate tests
+        await session.rollback()  # type: ignore
+    finally:
+        await session.close()  # type: ignore
 
 
 @pytest.fixture
