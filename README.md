@@ -68,31 +68,6 @@ poetry run uvicorn backend.sampark.api.main:app --reload
 - Check typing: `poetry run pyright`
 - Run linter: `poetry run ruff check backend/`
 
-## Project Structure
-
-```
-sampark-ai/
-├── docs/                       # Documentation folder
-│   ├── high_level_overview.md  # High-level project description
-│   ├── technical_design.md     # Technical architecture and best practices
-│   └── milestones.md           # Project milestones
-├── backend/                    # Source code
-│   ├── sampark/                # Main package
-│   │   ├── email_service/      # Email monitoring and communication
-│   │   │   ├── client.py
-│   │   │   ├── client_test.py  # Unit test next to source file
-│   │   │   └── ...
-│   │   ├── task_processor/     # Task understanding and extraction
-│   │   ├── planning/           # LLM-based planning system
-│   │   ├── execution/          # Step execution engine
-│   │   ├── database/           # NoSQL database interactions
-│   │   ├── api/                # FastAPI web endpoints
-│   │   └── utils/              # Shared utilities
-│   ├── tests/
-│   │   └── e2e/                # End-to-end tests
-├── pyproject.toml              # Poetry configuration
-└── README.md                   # Project overview
-```
 
 ## License
 
