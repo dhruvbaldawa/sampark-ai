@@ -122,6 +122,24 @@ sampark-ai/
 - **End-to-End Tests**: Complete workflow tests in dedicated directory
 - All components must maintain 80%+ test coverage
 
+### Test Structure Guidelines
+- Reuse pytest fixtures if there will be repetition in multiple test files
+- Structure tests with clear "Given, When, Then" sections:
+  ```python
+  def test_something(fixture1, fixture2):
+      # Given
+      # Setup code and preconditions
+
+      # When
+      # Execute the code under test
+
+      # Then
+      # Assert on the expected outcomes
+  ```
+- Prefer function-based tests over class-based tests
+- Reuse fixtures across test modules where possible
+- Use pytest-mock for mocking dependencies
+
 ## Best Practices
 
 ### Python-Specific Practices
