@@ -74,3 +74,10 @@ testpaths = ["backend"]
 python_files = ["test_*.py", "*_test.py"]
 python_functions = "test_*"
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+omit = [
+    "*_test.py",
+    "test_*.py",
+    "*/tests/*",
+]
