@@ -2,11 +2,11 @@
 
 ## Milestone 1: Project Setup & Email Integration (1-2 days)
 - Initialize Poetry project structure with backend/ directory
-- Set up MongoDB connection and basic schema
+- Set up SQLite database with SQLAlchemy ORM
 - Implement basic email service with Python email package
 - Create inbox monitoring for new messages
 - Build thread identification and basic reply functionality
-- Develop initial database models for emails
+- Develop initial SQLAlchemy models for emails
 - Create unit tests next to source files using *_test.py naming convention
 - **Deliverable:** Working system that can detect new emails and reply to them while maintaining thread context
 
@@ -16,14 +16,14 @@
 - Create Pydantic models for structured task data
 - Build parsing logic for email content
 - Develop basic task categorization
-- Store extracted task information in MongoDB
+- Store extracted task information in SQLite database
 - Add comprehensive unit tests for task understanding components
 - **Deliverable:** System that can receive an email, extract the task description, and acknowledge with basic understanding
 
 ## Milestone 3: Planning System Core (1-2 days)
 - Develop step generation algorithm using Pydantic AI
 - Create Pydantic models for plan structure
-- Implement MongoDB schema for storing plans
+- Implement SQLAlchemy models for storing plans
 - Build plan validation and consistency checking
 - Create debugging visualizations for plans
 - Add unit and integration tests for planning components
@@ -33,7 +33,7 @@
 - Build Python-based step executor infrastructure
 - Implement async task processing with proper error handling
 - Develop state management for execution tracking
-- Create MongoDB models for execution status
+- Create SQLAlchemy models for execution status
 - Implement retry logic for failed steps
 - Add tests for execution components
 - **Deliverable:** Engine that can execute pre-defined steps and track their completion status
@@ -66,7 +66,7 @@
 - **Deliverable:** Complete working system handling basic end-to-end tasks
 
 ## Milestone 8: Advanced Planning Features (1-2 days)
-- Enhance step dependency management in MongoDB
+- Enhance step dependency management in SQLAlchemy models
 - Implement parallel execution capabilities
 - Add resource estimation per step
 - Create plan adjustment based on execution results
@@ -85,7 +85,7 @@
 - **Deliverable:** System with security measures for handling sensitive information
 
 ## Milestone 10: Robustness & Performance (1-2 days)
-- Implement MongoDB query optimization
+- Implement SQLAlchemy query optimization
 - Add caching for frequently accessed data
 - Optimize Pydantic AI prompts for faster responses
 - Create circuit breakers for external API calls
