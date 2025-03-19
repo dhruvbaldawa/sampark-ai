@@ -27,36 +27,49 @@ async def process_email_callback(email_service: EmailService, email_data: EmailD
         email_data: Data for a new email
     """
     logger.info(f"Processing new email: {email_data['subject']} from {email_data['sender']}")
-    message = await email_service.process_new_email(email_data)
 
-    if message:
-        # Send an automated reply
-        logger.info(f"Sending acknowledgment reply to {message.message_id}")
+    # Create a database session that we'll use for the entire process
+    async with email_service.Session() as db_session:
+        try:
+            # Process the new email with our session
+            message = await email_service.process_new_email(email_data, db_session=db_session)
 
-        reply_text = (
-            f"Hello {email_data['sender']},\n\n"
-            f"Thank you for your email. I've received your message and will process it soon.\n\n"
-            f"Best regards,\nSampark-AI"
-        )
+            # Commit the transaction to ensure the message and thread are persisted
+            await db_session.commit()
 
-        reply_html = (
-            f"<p>Hello {email_data['sender']},</p>"
-            f"<p>Thank you for your email. I've received your message and will process it soon.</p>"
-            f"<p>Best regards,<br>Sampark-AI</p>"
-        )
+            if message:
+                # Send an automated reply using the same session
+                logger.info(f"Sending acknowledgment reply to {message.message_id}")
 
-        success, _ = await email_service.reply_to_email(
-            message_id=message.message_id,
-            body_text=reply_text,
-            body_html=reply_html,
-        )
+                reply_text = (
+                    f"Hello {email_data['sender']},\n\n"
+                    f"Thank you for your email. I've received your message and will process it soon.\n\n"
+                    f"Best regards,\nSampark-AI"
+                )
 
-        if success:
-            logger.info("Sent acknowledgment reply successfully")
-        else:
-            logger.error("Failed to send acknowledgment reply")
-    else:
-        logger.error("Failed to process email")
+                reply_html = (
+                    f"<p>Hello {email_data['sender']},</p>"
+                    f"<p>Thank you for your email. I've received your message and will process it soon.</p>"
+                    f"<p>Best regards,<br>Sampark-AI</p>"
+                )
+
+                success, _ = await email_service.reply_to_email(
+                    message_id=message.message_id,
+                    body_text=reply_text,
+                    body_html=reply_html,
+                    db_session=db_session,
+                )
+
+                if success:
+                    logger.info("Sent acknowledgment reply successfully")
+                else:
+                    logger.error("Failed to send acknowledgment reply")
+            else:
+                logger.error("Failed to process email, or message already processed")
+        except Exception as e:
+            logger.error(f"Error in process_email_callback: {str(e)}")
+            await db_session.rollback()
+            # Don't re-raise; we want to continue monitoring emails even if one fails
 
 
 async def main() -> None:
@@ -74,6 +87,7 @@ async def main() -> None:
             "EMAIL_USERNAME",
             "EMAIL_PASSWORD",
             "DB_PATH",
+            "SENDER_EMAIL",
         ]
 
         missing_vars = [var for var in required_env_vars if not os.getenv(var)]
@@ -94,8 +108,8 @@ async def main() -> None:
             smtp_port=int(os.getenv("SMTP_PORT", "587")),
             username=os.getenv("EMAIL_USERNAME", ""),
             password=os.getenv("EMAIL_PASSWORD", ""),
+            sender_email=os.getenv("SENDER_EMAIL", ""),
         )
-
         # Create email service
         email_service = EmailService(email_client=email_client)
 

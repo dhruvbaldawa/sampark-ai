@@ -33,6 +33,7 @@ class EmailClient:
         imap_port: int,
         smtp_server: str,
         smtp_port: int,
+        sender_email: str,
         username: str,
         password: str,
         mailbox: str = "INBOX",
@@ -44,6 +45,7 @@ class EmailClient:
         self.username = username
         self.password = password
         self.mailbox = mailbox
+        self.sender_email = sender_email
         self._imap: Optional[imaplib.IMAP4_SSL] = None
 
     def _connect_imap(self) -> None:
@@ -244,7 +246,17 @@ class EmailClient:
                 try:
                     # Skip the unnecessary isinstance check since we know the type
                     email_data = self._parse_email(raw_email)
+
+                    # Skip emails sent by our own email address
+                    if email_data["sender"] == self.sender_email:
+                        logger.info(f"Skipping email sent by our own address: {self.sender_email}")
+                        # Mark as seen so we don't process it again
+                        self._imap.store(message_id, '+FLAGS', '\\Seen')
+                        continue
+
                     emails.append(email_data)
+                    # After processing each email
+                    self._imap.store(message_id, '+FLAGS', '\\Seen')
                 except Exception as e:
                     logger.error(f"Error processing email: {str(e)}")
 
@@ -296,12 +308,12 @@ class EmailClient:
         else:
             cc = []
 
-        msg["From"] = self.username
+        msg["From"] = self.sender_email
         msg["Subject"] = subject
         msg["Date"] = formatdate(localtime=True)
 
         # Generate a message ID
-        msg_id = make_msgid(domain=self.username.split("@")[1])
+        msg_id = make_msgid(domain=self.sender_email.split("@")[1])
         msg["Message-ID"] = msg_id
 
         # Add In-Reply-To and References headers for threading

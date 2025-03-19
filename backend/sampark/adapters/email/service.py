@@ -146,16 +146,28 @@ class EmailService:
                 session_context = self.Session()
                 db_session = await session_context.__aenter__()
 
+            # Check if this message already exists in the database
+            existing_message = await self._get_message_by_message_id(db_session, email_data["message_id"])
+            if existing_message:
+                logger.info(f"Message with ID {email_data['message_id']} already exists, skipping processing")
+                return None
+
             # Get or create the thread
             thread = await self._get_thread_by_thread_id(db_session, email_data["thread_id"])
             if not thread:
+                logger.info(f"Creating new thread for email with thread_id: {email_data['thread_id']}")
                 thread = await self._create_email_thread(
                     db_session=db_session,
                     thread_id=email_data["thread_id"],
                     subject=email_data["subject"],
                 )
                 if not thread:
+                    logger.error(f"Failed to create thread with thread_id: {email_data['thread_id']}")
                     return None
+
+                # Commit the thread creation to ensure it's persisted
+                if session_context:  # Only commit if we created the session
+                    await db_session.commit()
 
             # Add participants to the thread if needed
             all_participants = self._get_participants(thread)
@@ -179,13 +191,20 @@ class EmailService:
             # Update participants if they've changed
             if set(all_participants) != participants_set:
                 await self._update_participants(db_session, thread, list(participants_set))
+                # No need to commit here as _update_participants already commits
 
             # Save the message
-            return await self._save_email_message(
+            message = await self._save_email_message(
                 db_session=db_session,
                 message_data=email_data,
                 thread_id=thread.id,
             )
+
+            # Explicitly commit the message creation if we created the session
+            if session_context and message:
+                await db_session.commit()
+
+            return message
         except Exception as e:
             logger.error(f"Error processing new email: {str(e)}")
             # Only rollback if we created the session and it's valid
@@ -229,12 +248,6 @@ class EmailService:
                 logger.error(f"Original message {message_id} not found")
                 return False, None
 
-            # Get the thread
-            thread = await self._get_thread_by_thread_id(db_session, original_message.thread_id)
-            if not thread:
-                logger.error(f"Thread {original_message.thread_id} not found")
-                return False, None
-
             # Prepare the reply data
             recipients, subject, references = self._prepare_reply_data(original_message)
 
@@ -267,13 +280,17 @@ class EmailService:
             reply_message = await self._save_email_message(
                 db_session=db_session,
                 message_data=reply_data,
-                thread_id=thread.id,
+                thread_id=original_message.thread_id,
                 is_sent_by_system=True,
             )
 
+            # Commit again to ensure the reply message is persisted
+            await db_session.commit()
+
             return True, reply_message
         except Exception as e:
-            logger.error(f"Error replying to email: {str(e)}")
+            logger.error(f"Error replying to email: {e}")
+            import traceback; traceback.print_exc()
             # Only rollback if we created the session and it's valid
             if session_context and db_session:
                 await db_session.rollback()
