@@ -1,6 +1,6 @@
 # Project Milestones: Sampark-AI
 
-## Milestone 1: Project Setup & Email Integration (1-2 days)
+## Milestone 1: Project Setup & Email Integration (1-2 days) ✅ COMPLETED
 - Initialize Poetry project structure with backend/ directory
 - Set up SQLite database with SQLAlchemy ORM
 - Implement basic email service with Python email package
@@ -35,7 +35,9 @@
 - Develop state management for execution tracking
 - Create SQLAlchemy models for execution status
 - Implement retry logic for failed steps
-- Add tests for execution components
+- Implement workflow trigger queuing for busy workflows
+- Develop mechanism to process queued triggers when workflow completes
+- Add tests for execution components and queue management
 - **Deliverable:** Engine that can execute pre-defined steps and track their completion status
 
 ## Milestone 5: FastAPI Monitoring Dashboard (1-2 days)
