@@ -10,26 +10,25 @@ An intelligent LLM-powered agent system that receives tasks via email, processes
 
 3. **Task Understanding**: Uses LLM capabilities to comprehend the task requirements and objectives.
 
-4. **Planning Phase**: Creates a structured plan that breaks down the task into logical, sequential steps.
+4. **Workflow Engine**: Orchestrates the entire process from task comprehension to completion, managing the sequence of operations required to fulfill the request.
 
-5. **Execution Engine**: Methodically executes each step of the plan, with appropriate error handling.
+5. **Communication**: Provides updates, asks clarifying questions, and delivers final results through the same email thread.
 
-6. **Communication**: Provides updates, asks clarifying questions, and delivers final results through the same email thread.
-
-7. **Persistence Layer**: Stores all email thread communications and task execution details in a database for tracking and auditing.
+6. **Persistence Layer**: Stores all email thread communications and workflow execution details in a database for tracking and auditing.
 
 ## Key Components
 - Email Integration Service
 - Natural Language Understanding Module
-- Planning System
-- Task Execution Framework
-- MongoDB Storage System
-- Email Response Generator
+- Workflow Engine
+- Tools Framework (for task execution capabilities)
+- SQLite with SQLAlchemy ORM
+- Event-Driven Communication System
 - FastAPI Monitoring Dashboard
 
 ## Business Value
 - Automates routine tasks without human intervention
 - Maintains clear communication records
-- Provides transparency into task planning and execution
+- Provides transparency into workflow execution
 - Scales to handle multiple concurrent task requests
 - Creates a persistent record of all activities and outcomes
+- Simplifies extension with new capabilities through the tools framework

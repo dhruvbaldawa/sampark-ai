@@ -1,0 +1,118 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Sampark-AI Project Rules
+
+Refer [high-level-overview.md](mdc:docs/high-level-overview.md) for the high-level overview of the project, and project structure.
+Refer [technical-design.md](mdc:docs/technical-design.md) for how the project is structured.
+
+## Technology Stack
+- Python 3.12+
+- Poetry for dependency management
+- Pydantic AI for LLM interactions
+- MongoDB (NoSQL database)
+- FastAPI for web framework
+- High-level email package for IMAP/SMTP
+
+## Development Rules
+
+### Development mindset
+- Only create directories as needed, don't create a directory structure with a lot empty directories
+- Explicit is better than implicit
+- Simplicity is the key
+- Abstractions must hide and contain complexity
+- Use strong, defined interfaces with low-level primitives that can be composed to implement higher-order functionality
+- If it does not tests, it does not work
+
+### Documentation Requirements
+- All three documentation files ([high-level-overview.md](mdc:docs/high-level-overview.md), [technical-design.md](mdc:docs/technical-design.md), [milestones.md](mdc:docs/milestones.md)) must be kept up-to-date as the project evolves
+- When completing a milestone, update the [milestones.md](mdc:docs/milestones.md) file to reflect actual implementation details
+- If technical architecture changes during development, update [technical-design.md](mdc:docs/technical-design.md) immediately
+- Document any deviations from the original high-level plan in [high-level-overview.md](mdc:docs/high-level-overview.md)
+
+### Code Quality
+- Use type hints throughout the codebase
+- Follow PEP 8 style guidelines
+- Document all public functions and classes
+- Use meaningful variable and function names
+- Keep functions small and focused on a single responsibility
+
+### Security Practices
+- No hardcoded credentials in the codebase
+- Use environment variables for configuration
+- Sanitize all user inputs
+- Implement rate limiting for external APIs
+- Add proper authentication for web endpoints
+- Log security-relevant events
+
+### Continuous Development
+- Document new features as they are implemented
+- Update technical diagrams when architecture changes
+- Review documentation at the end of each milestone
+- Maintain an updated changelog
+- Hold regular reviews to ensure documentation accuracy
+
+## Best Practices
+
+### Python-Specific Practices
+- Type hints for all functions and classes
+- Dataclasses and Pydantic models for data validation
+- Async/await for I/O-bound operations
+- Context managers for resource management
+- Exception handling with specific exception types
+
+### Communication-Agnostic Workflow Design
+- Workflows must never directly interact with communication channels
+- All user interactions must go through the event system
+- Communication details should be encapsulated in adapter modules
+- Adapters are responsible for translating between domain events and channel-specific formats
+- Event payloads should contain all necessary context but remain transport-agnostic
+- Use callback interfaces rather than direct method calls for inter-component communication
+
+### Software Design Principles
+- **SOLID Principles**
+  - Single Responsibility: Each component has one reason to change
+  - Open/Closed: Open for extension, closed for modification
+  - Liskov Substitution: Subtypes must be substitutable for base types
+  - Interface Segregation: Clients shouldn't depend on unused interfaces
+  - Dependency Inversion: Depend on abstractions, not implementations
+
+- **Clean Architecture**
+  - Clear separation of concerns
+  - Domain-driven design
+  - Use of interfaces for decoupling
+  - Inversion of control
+
+### Development Practices
+- Continuous Integration/Continuous Deployment
+- Code Reviews
+- Version Control Best Practices
+
+### Error Handling
+- Graceful failure modes
+- Comprehensive logging with structlog
+- Retry mechanisms with exponential backoff
+- Circuit breakers for external dependencies
+
+### Security Considerations
+- Email content encryption
+- Secure API key management
+- Input validation and sanitization
+- Rate limiting
+- Access control
+
+### Scalability Approach
+- Horizontal scaling of execution engine
+- Stateless processing where possible
+- Message queue for managing execution load
+- Database sharding for large volumes
+
+### Monitoring and Maintenance
+- Health check endpoints
+- Performance metrics dashboards
+- Error rate tracking
+- Response time monitoring
+- Resource usage alerts
+

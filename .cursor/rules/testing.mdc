@@ -1,0 +1,47 @@
+---
+description: 
+globs: **/*_test.py,**/conftest.py
+alwaysApply: false
+---
+# Testing Standards and Guidelines
+
+## General Testing Standards
+- Maintain 80%+ code coverage for all modules
+- Write tests before implementing features (TDD approach)
+- Unit tests should be placed next to source files with naming convention `file_test.py`
+- Integration tests should test interaction between components
+- End-to-end tests should verify complete user flows
+- All tests must pass before merging changes
+
+## Testing Strategy
+- **Unit Tests**: Located next to source files with naming pattern `file_test.py`
+- **Integration Tests**: In dedicated directory testing component interactions
+- **End-to-End Tests**: Complete workflow tests in dedicated directory
+- All components must maintain 80%+ test coverage
+
+## Test Structure Guidelines
+- Reuse pytest fixtures if there will be repetition in multiple test files
+- Structure tests with clear "Given, When, Then" sections:
+  ```python
+  def test_something(fixture1, fixture2):
+      # Given
+      # Setup code and preconditions
+
+      # When
+      # Execute the code under test
+
+      # Then
+      # Assert on the expected outcomes
+  ```
+- Prefer function-based tests over class-based tests
+- Reuse fixtures across test modules where possible
+- Add common fixtures to `backend/tests/fixtures.py`
+- Use pytest-mock for mocking dependencies
+
+### Testing Standards
+- Maintain 80%+ code coverage for all modules
+- Write tests before implementing features (TDD approach)
+- Unit tests should be placed next to source files with naming convention `file_test.py`
+- Integration tests should test interaction between components
+- End-to-end tests should verify complete user flows
+- All tests must pass before merging changes
